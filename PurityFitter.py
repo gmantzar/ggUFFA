@@ -26,6 +26,7 @@ class PurityFitter:
     class Particles(Enum):
         proton = 1
         Lambda = 2
+        Xi = 3
 
     class Histograms(Enum):
         tpcpid = 1
@@ -94,6 +95,8 @@ class PurityFitter:
             self.particleType =  self.Particles.proton.value
         elif partType == "Lambda":
             self.particleType = self.Particles.Lambda.value
+        elif partType == "Xi":
+            self.particleType = self.Particles.Xi.value
         else:
             print('Please select either "Proton" or "Lambda"')
 
@@ -552,7 +555,106 @@ class PurityFitter:
                                         3)
                             )
 
+    def set_DoubleGauss_invMassFnc(self):
+        
+        self.signalEdges = []
+        self.bkgInnerEdges = []
+        self.bkgEdges = []
+        
+        self.fCombined = []
+        self.fSignal = []
+        self.fSignalPrefit = []
+        self.fBkg = []
+        self.fBkgPrefit = []
+        self.fBkgLeft = []
+        self.fBkgRight = []
+
+        for i in range(len(self.fitSlices)):
+            
+            # set the default Ranges:
+            if self.Particles(self.particleType) is self.Particles.Lambda:
+                self.bkgEdges.append([1.284, 1.36])
+                self.bkgInnerEdges.append([1.310, 1.330])
+                self.signalEdges.append([1.310, 1.330])
+            elif self.Particles(self.particleType) is self.Particles.Xi:
+                self.bkgEdges.append([1.09, 1.14])
+                self.bkgInnerEdges.append([1.110, 1.121])
+                self.signalEdges.append([1.1117, 1.1197])
+            else:
+                print("This histogram is not supported yet")
+
+            # set the fit functions and the corresponding QA functions
+            self.fCombined.append( ROOT.TF1("fCombined_"+str(i),
+                                            "[0]*TMath::Gaus(x, [1], [2]) + [3]*TMath::Gaus(x, [4], [5]) + [6] + [7]*x + [8]*x*x + [9]*x*x*x",
+                                            self.bkgEdges[i][0],
+                                            self.bkgEdges[i][1],
+                                            10)
+                                 )
+            self.fCombined[i].SetParLimits(0, 0., 1e10)
+            self.fCombined[i].SetParLimits(3, 0., 1e10)
+
+            self.fSignalPrefit.append([])  
+            self.fSignalPrefit[i].append( ROOT.TF1("fSignal_"+str(i)+"_narrowGauss",
+                                          "[0]*TMath::Gaus(x, [1], [2])",
+                                          self.signalEdges[i][0],
+                                          self.signalEdges[i][1],
+                                          3)
+                               )
+            self.fSignalPrefit[i].append( ROOT.TF1("fSignal_"+str(i)+"_wideGauss",
+                                          "[0]*TMath::Gaus(x, [1], [2])",
+                                          self.signalEdges[i][0],
+                                          self.signalEdges[i][1],
+                                          3)
+                               )
+            self.fSignalPrefit[i][0].SetParLimits(0, 0., 1e10)
+            self.fSignalPrefit[i][0].SetParLimits(3, 0., 1e10)
+            self.fSignalPrefit[i][1].SetParLimits(0, 0., 1e10)
+            self.fSignalPrefit[i][1].SetParLimits(3, 0., 1e10)
+
+            self.fSignal.append( ROOT.TF1("fSignal_"+str(i),
+                                          "[0]*TMath::Gaus(x, [1], [2]) + [3]*TMath::Gaus(x, [4], [5])",
+                                          self.signalEdges[i][0],
+                                          self.signalEdges[i][1],
+                                          6)
+                               )
+            self.fSignal[i].SetParLimits(0, 0., 1e10)
+            self.fSignal[i].SetParLimits(3, 0., 1e10)
+            
+            self.fBkg.append( ROOT.TF1("fBkg_"+str(i),
+                                        "[0] + [1]*x + [2]*x*x + [3]*x*x*x",
+                                        self.bkgEdges[i][0],
+                                        self.bkgEdges[i][1],
+                                        4)
+                            )
+
+            self.fBkgPrefit.append( ROOT.TF1("fBkgPrefit_"+str(i),
+                                    invMassLambdaBkgPrefitFunction,
+                                    self.bkgEdges[i][0],
+                                    self.bkgEdges[i][1],
+                                    6)
+                                  )
+
+
+            self.fBkgLeft.append( ROOT.TF1("fBkgLeft_"+str(i),
+                                          "[0] + [1]*x + [2]*x*x + [3]*x*x*x",
+                                          self.bkgEdges[i][0],
+                                          self.bkgInnerEdges[i][0],
+                                          4)
+                                )
+
+            self.fBkgRight.append( ROOT.TF1("fBkgRight_"+str(i),
+                                          "[0] + [1]*x + [2]*x*x + [3]*x*x*x",
+                                          self.bkgInnerEdges[i][1],
+                                          self.bkgEdges[i][1],
+                                          4)
+                                )
+    
     def set_Lambda_invMassFnc(self):
+        """
+        depricated and kept for compatibility
+        use the general invarian mass functions instead
+        TODO: try to remove this as soon as possible
+        """
         
         self.signalEdges = []
         self.bkgInnerEdges = []
@@ -664,7 +766,8 @@ class PurityFitter:
             self.set_combFitFnc()
 
         elif self.Histograms(self.histType) is self.Histograms.invMass:
-            self.set_Lambda_invMassFnc()
+            self.set_DoubleGauss_invMassFnc()
+            #self.set_Lambda_invMassFnc()
 
         #TODO: implement support for TOF fit function
         #TODO: implement support for invMass fit function
@@ -861,7 +964,8 @@ class PurityFitter:
         offset = 0
         if self.Histograms(self.histType) is self.Histograms.combpid_simple or self.Histograms(self.histType) is self.Histograms.combpid_gausBkg:
             offset = 3 #TODO: in future this value should be retrieved automatically from the function --> Save it as an class atribute
-        
+        elif self.Histograms(self.histType) is self.Histograms.invMass:
+            offset = 6  
         self.fBkg[ifit].FixParameter(par, val)
         self.fCombined[ifit].FixParameter(offset+par, val)
     
@@ -878,10 +982,14 @@ class PurityFitter:
         offset = 0
         if self.Histograms(self.histType) is self.Histograms.combpid_simple or self.Histograms(self.histType) is self.Histograms.combpid_gausBkg:
             offset = 3 #TODO: in future this value should be retrieved automatically from the function --> Save it as an class atribute
+        elif self.Histograms(self.histType) is self.Histograms.invMass:
+            offset = 6  
         
-        for fnc, bkgfnc in zip(self.fCombined, self.fBkg):
+        for fnc, bkgfnc, bkgfncPrefit in zip(self.fCombined, self.fBkg, self.fBkgPrefit):
             bkgfnc.FixParameter(par, val)
+            bkgfncPrefit.FixParameter(par+2, val)
             fnc.FixParameter(offset+par, val)
+
     
     def setAllbkgparlimits(self, par, vallow, valup):
         offset = 0
@@ -946,10 +1054,16 @@ class PurityFitter:
 
             elif self.Histograms(self.histType) is self.Histograms.invMass:
                 
-                mPDG = 1.1157
-                self.fSignalPrefit[i][0].SetParameter(0, hist.GetBinContent( hist.GetXaxis().FindBin(mPDG) )) 
-                self.fSignalPrefit[i][0].SetParameter(1, mPDG) 
-                self.fSignalPrefit[i][0].SetParameter(2, 0.004) 
+                if self.Particles(self.particleType) is self.Particles.Lambda:
+                    mPDG = 1.1157
+                    self.fSignalPrefit[i][0].SetParameter(0, hist.GetBinContent( hist.GetXaxis().FindBin(mPDG) )) 
+                    self.fSignalPrefit[i][0].SetParameter(1, mPDG) 
+                    self.fSignalPrefit[i][0].SetParameter(2, 0.004) 
+                elif self.Particles(self.particleType) is self.Particles.Lambda:
+                    mPDG = 1.3217
+                    self.fSignalPrefit[i][0].SetParameter(0, hist.GetBinContent( hist.GetXaxis().FindBin(mPDG) )) 
+                    self.fSignalPrefit[i][0].SetParameter(1, mPDG) 
+                    self.fSignalPrefit[i][0].SetParameter(2, 0.005) 
 
                 hist.Fit(self.fSignalPrefit[i][0], "QLRN", "", self.signalEdges[i][0], self.signalEdges[i][1])
 
